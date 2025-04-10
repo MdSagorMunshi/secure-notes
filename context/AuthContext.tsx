@@ -47,11 +47,15 @@ import { router } from 'expo-router';
 import * as SecureStore from 'expo-secure-store';
 import * as Crypto from 'expo-crypto';
 import { AppState } from 'react-native';
+import { initDatabase } from '@/utils/database';
 
 interface AuthContextType {
   isAuthenticated: boolean;
   login: (pin: string) => Promise<void>;
   logout: () => Promise<void>;
+  verifyPin: (pin: string) => Promise<boolean>;
+  changePin: (newPin: string) => Promise<void>;
+  wipeData: (pin: string) => Promise<void>;
   checkInactivity: () => void;
 }
 
@@ -85,6 +89,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return hash;
   };
 
+  const verifyPin = async (pin: string): Promise<boolean> => {
+    try {
+      const storedHash = await SecureStore.getItemAsync('pin_hash');
+      const hash = await hashPin(pin);
+      return hash === storedHash;
+    } catch (error) {
+      return false;
+    }
+  };
+
   const login = async (pin: string) => {
     try {
       const storedHash = await SecureStore.getItemAsync('pin_hash');
@@ -95,6 +109,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         const salt = await Crypto.getRandomBytesAsync(16);
         await SecureStore.setItemAsync('pin_salt', salt.toString());
         await SecureStore.setItemAsync('pin_hash', hash);
+        await initDatabase();
         setIsAuthenticated(true);
         lastActivity = Date.now();
         return;
@@ -108,6 +123,39 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
     } catch (error) {
       throw new Error('Invalid PIN');
+    }
+  };
+
+  const changePin = async (newPin: string) => {
+    try {
+      const salt = await Crypto.getRandomBytesAsync(16);
+      const hash = await hashPin(newPin);
+      await SecureStore.setItemAsync('pin_salt', salt.toString());
+      await SecureStore.setItemAsync('pin_hash', hash);
+    } catch (error) {
+      throw new Error('Failed to change PIN');
+    }
+  };
+
+  const wipeData = async (pin: string) => {
+    try {
+      const isValid = await verifyPin(pin);
+      if (!isValid) {
+        throw new Error('Invalid PIN');
+      }
+
+      // Clear all secure storage
+      await SecureStore.deleteItemAsync('pin_hash');
+      await SecureStore.deleteItemAsync('pin_salt');
+      await SecureStore.deleteItemAsync('master_key');
+
+      // Reset database
+      await initDatabase();
+
+      // Logout and redirect to PIN screen
+      await logout();
+    } catch (error) {
+      throw new Error('Failed to wipe data');
     }
   };
 
@@ -127,6 +175,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     isAuthenticated,
     login,
     logout,
+    verifyPin,
+    changePin,
+    wipeData,
     checkInactivity,
   };
 

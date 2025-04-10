@@ -1,47 +1,31 @@
-/**
- * PIN Authentication Screen
- * 
- * This component implements a secure PIN entry interface with the following features:
- * - 6-digit PIN authentication
- * - Haptic feedback
- * - Animated error feedback
- * - Maximum attempt limiting
- * - Secure data wiping after max attempts
- * 
- * @author Ryan Shelby
- * @copyright Copyright (c) 2025 Ryan Shelby. All rights reserved.
- */
-
-import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, Pressable } from 'react-native';
+import React, { useState, useCallback } from 'react';
+import { View, Text, StyleSheet, Pressable, Dimensions } from 'react-native';
 import { router } from 'expo-router';
 import Animated, {
   useAnimatedStyle,
   withSpring,
   withSequence,
   withTiming,
-  runOnJS,
+  withDelay,
+  Easing,
+  FadeIn,
+  FadeInDown,
+  FadeOut,
 } from 'react-native-reanimated';
 import { useAuth } from '@/context/AuthContext';
-import * as Haptics from 'expo-haptics';
-import { Lock } from 'lucide-react-native';
+import { Lock, Delete } from 'lucide-react-native';
 
 const PIN_LENGTH = 6;
 const MAX_ATTEMPTS = 3;
+const SCREEN_WIDTH = Dimensions.get('window').width;
+
+const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 
 export default function PinScreen() {
   const [pin, setPin] = useState('');
   const [attempts, setAttempts] = useState(0);
   const [error, setError] = useState('');
   const { login } = useAuth();
-
-  const scale = useState(() => new Animated.Value(1))[0];
-
-  const animatedStyle = useAnimatedStyle(() => {
-    return {
-      transform: [{ scale: scale.value }],
-    };
-  });
 
   const handlePinInput = async (digit: string) => {
     if (pin.length < PIN_LENGTH) {
@@ -51,26 +35,16 @@ export default function PinScreen() {
       if (newPin.length === PIN_LENGTH) {
         try {
           await login(newPin);
-          Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
           router.replace('/(app)');
         } catch (err) {
-          Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
           setAttempts(prev => prev + 1);
           setError('Invalid PIN');
           setPin('');
-          
-          scale.value = withSequence(
-            withTiming(1.2, { duration: 100 }),
-            withSpring(1)
-          );
 
           if (attempts + 1 >= MAX_ATTEMPTS) {
-            // Implement secure data wiping here
             setError('Too many attempts. Data wiped.');
           }
         }
-      } else {
-        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
       }
     }
   };
@@ -78,47 +52,78 @@ export default function PinScreen() {
   const handleDelete = () => {
     if (pin.length > 0) {
       setPin(pin.slice(0, -1));
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     }
   };
 
+  const renderKey = useCallback(
+    (num: number | string) => {
+      const isDelete = num === 'delete';
+      const isEmpty = num === '';
+
+      if (isEmpty) return <View style={styles.key} />;
+
+      return (
+        <AnimatedPressable
+          entering={FadeInDown.delay(isDelete ? 300 : num * 100).springify()}
+          style={[styles.key, isDelete && styles.deleteKey]}
+          onPress={() => (isDelete ? handleDelete() : handlePinInput(num.toString()))}>
+          {isDelete ? (
+            <Delete size={24} color="#FF3B30" />
+          ) : (
+            <Text style={styles.keyText}>{num}</Text>
+          )}
+          <Animated.View style={styles.keyBackground} />
+        </AnimatedPressable>
+      );
+    },
+    [pin]
+  );
+
   return (
-    <View style={styles.container}>
-      <Animated.View style={[styles.pinContainer, animatedStyle]}>
-        <Lock size={48} color="#000" style={styles.icon} />
-        <Text style={styles.title}>Enter PIN</Text>
-        {error ? <Text style={styles.error}>{error}</Text> : null}
+    <Animated.View 
+      entering={FadeIn.duration(500)}
+      style={styles.container}>
+      <View style={styles.content}>
+        <Animated.View 
+          entering={FadeInDown.delay(200).springify()}
+          style={styles.header}>
+          <Lock size={48} color="#007AFF" />
+          <Text style={styles.title}>Enter PIN</Text>
+          {error ? (
+            <Animated.Text 
+              entering={FadeIn}
+              exiting={FadeOut}
+              style={styles.error}>
+              {error}
+            </Animated.Text>
+          ) : null}
+        </Animated.View>
+
         <View style={styles.dotsContainer}>
           {Array(PIN_LENGTH)
             .fill(0)
             .map((_, i) => (
-              <View
+              <Animated.View
                 key={i}
-                style={[styles.dot, i < pin.length && styles.dotFilled]}
+                entering={FadeInDown.delay(i * 100).springify()}
+                style={[
+                  styles.dot,
+                  i < pin.length && styles.dotFilled,
+                  error && styles.dotError,
+                ]}
               />
             ))}
         </View>
+
         <View style={styles.keypad}>
-          {[1, 2, 3, 4, 5, 6, 7, 8, 9, '', 0, 'del'].map((num, index) => (
-            <Pressable
-              key={index}
-              style={styles.key}
-              onPress={() => {
-                if (num === 'del') {
-                  handleDelete();
-                } else if (num !== '') {
-                  handlePinInput(num.toString());
-                }
-              }}
-            >
-              <Text style={styles.keyText}>
-                {num === 'del' ? '⌫' : num.toString()}
-              </Text>
-            </Pressable>
+          {[1, 2, 3, 4, 5, 6, 7, 8, 9, '', 0, 'delete'].map((num, index) => (
+            <View key={index} style={styles.keyWrapper}>
+              {renderKey(num)}
+            </View>
           ))}
         </View>
-      </Animated.View>
-    </View>
+      </View>
+    </Animated.View>
   );
 }
 
@@ -126,54 +131,82 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#fff',
+  },
+  content: {
+    flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
+    paddingBottom: 50,
   },
-  pinContainer: {
-    width: '100%',
+  header: {
     alignItems: 'center',
-    padding: 20,
-  },
-  icon: {
-    marginBottom: 20,
+    marginBottom: 40,
   },
   title: {
     fontSize: 24,
     fontWeight: 'bold',
-    marginBottom: 20,
+    marginTop: 16,
+    marginBottom: 8,
   },
   error: {
-    color: 'red',
-    marginBottom: 10,
+    color: '#FF3B30',
+    marginTop: 8,
+    fontSize: 16,
   },
   dotsContainer: {
     flexDirection: 'row',
-    marginBottom: 30,
+    marginBottom: 40,
   },
   dot: {
-    width: 12,
-    height: 12,
-    borderRadius: 6,
-    backgroundColor: '#e0e0e0',
-    margin: 5,
+    width: 16,
+    height: 16,
+    borderRadius: 8,
+    backgroundColor: '#E5E5EA',
+    margin: 8,
+    transform: [{ scale: 0.8 }],
   },
   dotFilled: {
-    backgroundColor: '#000',
+    backgroundColor: '#007AFF',
+    transform: [{ scale: 1 }],
+  },
+  dotError: {
+    backgroundColor: '#FF3B30',
   },
   keypad: {
     flexDirection: 'row',
     flexWrap: 'wrap',
     justifyContent: 'center',
-    width: '80%',
+    width: Math.min(400, SCREEN_WIDTH - 40),
+  },
+  keyWrapper: {
+    width: '33.33%',
+    aspectRatio: 1.5,
+    padding: 8,
   },
   key: {
-    width: '30%',
-    height: 70,
+    flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    margin: 5,
+    backgroundColor: '#F2F2F7',
+    borderRadius: 16,
+    position: 'relative',
+    overflow: 'hidden',
+  },
+  deleteKey: {
+    backgroundColor: 'transparent',
   },
   keyText: {
-    fontSize: 24,
+    fontSize: 28,
+    fontWeight: '500',
+    color: '#000',
+  },
+  keyBackground: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'rgba(0,0,0,0.05)',
+    opacity: 0,
   },
 });

@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, FlatList, Pressable } from 'react-native';
+import { View, Text, StyleSheet, FlatList, Pressable, TextInput } from 'react-native';
 import { Link } from 'expo-router';
-import { Plus, FileText } from 'lucide-react-native';
+import { Plus, FileText, Search } from 'lucide-react-native';
 import { getNotes } from '@/utils/database';
 
 interface Note {
@@ -15,6 +15,8 @@ interface Note {
 
 export default function NotesScreen() {
   const [notes, setNotes] = useState<Note[]>([]);
+  const [filteredNotes, setFilteredNotes] = useState<Note[]>([]);
+  const [searchQuery, setSearchQuery] = useState('');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -22,10 +24,24 @@ export default function NotesScreen() {
     loadNotes();
   }, []);
 
+  useEffect(() => {
+    if (searchQuery.trim() === '') {
+      setFilteredNotes(notes);
+    } else {
+      const query = searchQuery.toLowerCase();
+      const filtered = notes.filter(note => 
+        note.title.toLowerCase().includes(query) || 
+        note.content.toLowerCase().includes(query)
+      );
+      setFilteredNotes(filtered);
+    }
+  }, [searchQuery, notes]);
+
   async function loadNotes() {
     try {
       const fetchedNotes = await getNotes();
       setNotes(fetchedNotes);
+      setFilteredNotes(fetchedNotes);
     } catch (err) {
       setError('Failed to load notes');
     } finally {
@@ -60,17 +76,30 @@ export default function NotesScreen() {
         </Link>
       </View>
 
-      {notes.length === 0 ? (
+      <View style={styles.searchContainer}>
+        <Search size={20} color="#666" style={styles.searchIcon} />
+        <TextInput
+          style={styles.searchInput}
+          placeholder="Search notes..."
+          value={searchQuery}
+          onChangeText={setSearchQuery}
+          placeholderTextColor="#999"
+        />
+      </View>
+
+      {filteredNotes.length === 0 ? (
         <View style={styles.emptyState}>
           <FileText size={48} color="#666" />
-          <Text style={styles.emptyText}>No notes yet</Text>
+          <Text style={styles.emptyText}>
+            {searchQuery ? 'No matching notes found' : 'No notes yet'}
+          </Text>
           <Text style={styles.emptySubtext}>
-            Tap the + button to create your first note
+            {searchQuery ? 'Try a different search term' : 'Tap the + button to create your first note'}
           </Text>
         </View>
       ) : (
         <FlatList
-          data={notes}
+          data={filteredNotes}
           keyExtractor={(item) => item.id}
           renderItem={({ item }) => (
             <Link href={`/notes/${item.id}`} asChild>
@@ -116,6 +145,24 @@ const styles = StyleSheet.create({
     borderRadius: 20,
     justifyContent: 'center',
     alignItems: 'center',
+  },
+  searchContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 12,
+    backgroundColor: '#f5f5f5',
+    marginHorizontal: 16,
+    marginVertical: 8,
+    borderRadius: 10,
+  },
+  searchIcon: {
+    marginRight: 8,
+  },
+  searchInput: {
+    flex: 1,
+    fontSize: 16,
+    color: '#333',
+    padding: 0,
   },
   list: {
     padding: 16,

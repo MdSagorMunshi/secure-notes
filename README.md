@@ -66,7 +66,7 @@ Secure Notes is designed for users who prioritize privacy and security in their 
 
 1. Clone the repository:
 ```bash
-git clone https://github.com/yourusername/secure-notes.git
+git clone https://github.com/MdSagorMunshi/secure-notes.git
 cd secure-notes
 ```
 
